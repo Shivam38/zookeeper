@@ -93,6 +93,7 @@ func (db *zkDB) Login() error {
 	if err != nil {
 		panic(err)
 	}
+	//TODO need to remove children according to the need
 	children, stat, ch, err := db.Con.ChildrenW("/")
 	if err != nil {
 		panic(err)
