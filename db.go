@@ -1,4 +1,4 @@
-package main
+package zookeeper
 
 import (
 	"encoding/json"
@@ -24,88 +24,103 @@ func New() *zkDB {
 	return &zkDB{isSetup: false}
 }
 
-func (db *zkDB) IsSetup() bool {
-	return db.isSetup
-}
-
-func (db *zkDB) Set(Key string, Value string) error {
-    //TODO get the value of status_global-path
-	//	_, err := db.Kapi.Set(db.Ctx, Key, string(Value), nil)
-	//    _, err := db.Con.Set(Key,[]byte{},-1)
-	globalstatus := make(map[string]string)
-	globalstatus[Key] = Value
-	if statusbytes, err := json.Marshal(globalstatus); err == nil {
-		if _, err := db.Con.Set(status_global, statusbytes, -1); err == zk.ErrNoNode {
-			db.Con.Create(status_global, statusbytes, DEF_FLAGS, DEF_ACL)
-		}
-	}
-
-	return err
-
-}
-
-/*
-//TODO
-func (db *etcdDB) Get(Key string) (string, error) {
-
-	resp, err := db.Kapi.Get(db.Ctx, Key, nil)
-	if err != nil {
-		return "", err
-	}
-	return resp.Node.Value, nil
-}
-
-func (db *etcdDB) IsDir(Key string) (error, bool) {
-	resp, err := db.Kapi.Get(db.Ctx, Key, nil)
-
-	if err != nil {
-		return err, false
-	}
-	return nil, resp.Node.Dir
-}
-*/
-
-func (db *zkDB) IsKey(Key string) (bool, error) {
-	if by, _, err := db.Con.Get(Key); err != nil {
-		fmt.Printf("Get failed on node 2: %+v", err)
-	} else if string(by) != "foo-cluster" {
-		fmt.Printf("Wrong data for node 2")
-	}
-	return true, nil
-}
-
-//CreateSection will create a directory in zookeeper store
-func (db *zkDB) CreateSection(Key string) error {
-	//	_, err := db.Kapi.Set(db.Ctx, Key, "", &cli.SetOptions{Dir: true, PrevExist: cli.PrevNoExist})
-	_, err := db.Con.Set(Key, []byte{}, -1)
-	//    fmt.Printf("Create Section")
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (db *zkDB) Login() error {
 	var err error
-	//TODO Get the ip from config file
 	//&db.Con,_,err = zk.Connect([]string{"127.0.0.1"}, time.Second) //*10)
 	db.Con, _, err = zk.Connect([]string{"127.0.0.1"}, time.Second) //*10)
 	if err != nil {
 		panic(err)
 	}
-	//TODO need to remove children according to the need
-	children, stat, ch, err := db.Con.ChildrenW("/")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("%+v %+v\n", children, stat)
-	e := <-ch
-	fmt.Printf("%+v\n", e)
-
+	/*	children, stat, ch, err := db.Con.ChildrenW("/")
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%+v %+v\n", children, stat)
+		e := <-ch
+		fmt.Printf("%+v\n", e)
+	*/
 	return nil
 }
 
-func (db *zkDB) Setup() error {
+func (db *zkDB) IsSetup() bool {
+	return db.isSetup
+}
+
+func (db *zkDB) Set(Key string, Value string) error {
+	globalstatus := make(map[string]string)
+	globalstatus[Key] = Value
+	if statusbytes, err := json.Marshal(globalstatus); err == nil {
+		if _, err := db.Con.Set(Key, statusbytes, -1); err != nil {
+			fmt.Printf("Failed :%+v", err)
+		}
+	}
+	return nil
+}
+
+func (db *zkDB) Get(Key string) (string, error) {
+	globalstatus := make(map[string]string)
+	if globalbytes, _, err := db.Con.Get(Key); err != nil {
+		json.Unmarshal(globalbytes, &globalstatus)
+	}
+	return globalstatus[Key], nil
+}
+
+func (db *zkDB) IsDir(Key string) (error, bool) {
+	//	resp, err := db.Kapi.Get(db.Ctx, Key, nil)
+
+	globalstatus := make(map[string]string)
+	if globalbytes, _, err := db.Con.Get(Key); err != nil {
+		json.Unmarshal(globalbytes, &globalstatus)
+		return err, false
+	}
+	/*
+		if err != nil {
+			return err, false
+		}*/
+	return nil, true
+}
+
+func (db *zkDB) IsKey(Key string) (bool, error) {
+	if by, _, err := db.Con.Get(Key); err != nil {
+		//		t.Fatalf("Get failed on node 2: %+v", err)
+		fmt.Printf("Get failed on node 2: %+v", err)
+	} else if string(by) != "foo-cluster" {
+		//		t.Fatal("Wrong data for node 2")
+		fmt.Printf("Wrong data for node 2")
+	}
+	return true, nil
+}
+
+func (db *zkDB) Update(Key string, Value string, Lock bool) error {
+	return nil
+}
+
+func (db *zkDB) Del(Key string) error {
+	/*	if err := db.Con.Delete(Key, -1); err != nil && err != ErrNoNode {
+			fmt.Printf("Delete returned error: %+v", err)
+			return err
+		}
+		_, err := db.Kapi.Delete(db.Ctx, Key, nil)
+
+		if err != nil {
+			return err
+		}
+	*/return nil
+}
+
+//CreateSection will create a directory in zookeeper store
+func (db *zkDB) CreateSection(Key string) error {
+	globalstatus := make(map[string]string)
+	globalstatus[Key] = ""
+	if statusbytes, err := json.Marshal(globalstatus); err == nil {
+		if _, err := db.Con.Set(Key, statusbytes, -1); err != nil {
+			fmt.Printf("Failed :%+v", err)
+		}
+	}
+	return nil
+}
+
+func (db *zkDB) Setup(config string) error {
 	var err error
 	/*	db.Cfg = cli.Config{
 			Endpoints: []string{config},
@@ -128,25 +143,49 @@ func (db *zkDB) Setup() error {
 	if err != nil && strings.Contains(err.Error(), "Key already exists") != true {
 		return err
 	}
-
 	err = db.CreateSection(ETC_CONF_DIR)
 	if err != nil && strings.Contains(err.Error(), "Key already exists") != true {
 		return err
 	}
-
 	db.isSetup = true
 	return nil
 }
 
-func main() {
-	var zi zkDB
-	zi.Setup()
-	//zi.isKey("nodeName")
-	if ok, _ := zi.IsKey("nodeName"); !ok {
-		//return nil
-		//fmt.Printf("Shivam")
+func (db *zkDB) CleanSlate() error {
+	//	_, err := db.Kapi.Delete(db.Ctx, ETC_BASE_DIR, &cli.DeleteOptions{Dir: true, Recursive: true})
+	return nil
+}
+
+//DeleteSection section will delete a directory optionally delete
+func (db *zkDB) DeleteSection(Key string) error {
+
+	//	_, err := db.Kapi.Delete(db.Ctx, Key, &cli.DeleteOptions{Dir: true})
+	return nil
+}
+
+//ListSection will list a directory
+func (db *zkDB) ListSection(Key string, Recursive bool) ([]string, error) {
+
+	globalstatus := make(map[string]string)
+	if globalbytes, _, err := db.Con.Get(Key); err != nil {
+		json.Unmarshal(globalbytes, &globalstatus)
+	}
+	//json.Unmarshal(globalbytes, &globalstatus)
+	retStr := make([]string, len(globalstatus))
+	i := 0
+	for k := range globalstatus {
+		retStr[i] = k
+		i++
 	}
 
-	//zi.Login()
-	//zi.CreateSection(ETC_BASE_DIR)
+	/*	resp, err := db.Kapi.Get(db.Ctx, Key, &cli.GetOptions{Sort: true})
+		if err != nil {
+			return nil, err
+		}
+		retStr := make([]string, len(resp.Node.Nodes))
+		for i, n := range resp.Node.Nodes {
+			retStr[i] = n.Key
+		}
+	*/
+	return retStr, nil
 }
