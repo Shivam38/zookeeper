@@ -1,5 +1,4 @@
 package zookeeper
-
 import (
 	"encoding/json"
 	"fmt"
@@ -14,9 +13,15 @@ const (
 	ETC_CONF_DIR = ETC_BASE_DIR + "/Config"
 )
 
+var (
+	DEF_ACL = zk.WorldACL(zk.PermAll)
+)
+
 type zkDB struct {
 	Con     *zk.Conn
-	Eve     zk.Event
+//	Eve     zk.Event
+//	cfg     zk.ServerConfig
+    cfg     string
 	isSetup bool
 }
 
@@ -26,19 +31,19 @@ func New() *zkDB {
 
 func (db *zkDB) Login() error {
 	var err error
-	//&db.Con,_,err = zk.Connect([]string{"127.0.0.1"}, time.Second) //*10)
-	db.Con, _, err = zk.Connect([]string{"127.0.0.1"}, time.Second) //*10)
+//	db.Con,_,err = zk.Connect([]string{"127.0.0.1"}, time.Second) //*10)
+	db.Con, _, err = zk.Connect([]string{db.cfg}, time.Second) //*10)
 	if err != nil {
 		panic(err)
 	}
-	/*	children, stat, ch, err := db.Con.ChildrenW("/")
+/*		children, stat, ch, err := db.Con.ChildrenW("/")
 		if err != nil {
 			panic(err)
 		}
 		fmt.Printf("%+v %+v\n", children, stat)
 		e := <-ch
 		fmt.Printf("%+v\n", e)
-	*/
+*/	
 	return nil
 }
 
@@ -51,7 +56,7 @@ func (db *zkDB) Set(Key string, Value string) error {
 	globalstatus[Key] = Value
 	if statusbytes, err := json.Marshal(globalstatus); err == nil {
 		if _, err := db.Con.Set(Key, statusbytes, -1); err != nil {
-			fmt.Printf("Failed :%+v", err)
+			db.Con.Create(Key,statusbytes, 0, DEF_ACL)
 		}
 	}
 	return nil
@@ -81,14 +86,28 @@ func (db *zkDB) IsDir(Key string) (error, bool) {
 }
 
 func (db *zkDB) IsKey(Key string) (bool, error) {
-	if by, _, err := db.Con.Get(Key); err != nil {
+
+	globalstatus := make(map[string]string)
+	if globalbytes, _, err := db.Con.Get(Key); err != nil {
+		json.Unmarshal(globalbytes, &globalstatus)
+	}
+//	retStr := make([]string, len(globalstatus))
+//	i := 0
+	for k := range globalstatus {
+		if(Key == k){
+		    fmt.Printf("Matched")
+		    return true, nil
+        }
+	}
+
+/*	if by, _, err := db.Con.Get(Key); err != nil {
 		//		t.Fatalf("Get failed on node 2: %+v", err)
 		fmt.Printf("Get failed on node 2: %+v", err)
 	} else if string(by) != "foo-cluster" {
 		//		t.Fatal("Wrong data for node 2")
 		fmt.Printf("Wrong data for node 2")
-	}
-	return true, nil
+	}*/
+	return false, nil
 }
 
 func (db *zkDB) Update(Key string, Value string, Lock bool) error {
@@ -114,7 +133,7 @@ func (db *zkDB) CreateSection(Key string) error {
 	globalstatus[Key] = ""
 	if statusbytes, err := json.Marshal(globalstatus); err == nil {
 		if _, err := db.Con.Set(Key, statusbytes, -1); err != nil {
-			fmt.Printf("Failed :%+v", err)
+		    db.Con.Create(Key,statusbytes, 0, DEF_ACL)
 		}
 	}
 	return nil
@@ -129,6 +148,15 @@ func (db *zkDB) Setup(config string) error {
 			HeaderTimeoutPerRequest: time.Second,
 		}
 	*/
+	
+    i := strings.Index(config, "//")
+    if i > -1 {
+        db.cfg = config[i+2:]
+    } else {
+	    db.cfg = config
+    }
+
+
 	err = db.Login()
 	if err != nil {
 		return err
